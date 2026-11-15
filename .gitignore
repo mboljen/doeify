@@ -1,5 +1,9 @@
 pkg/
 share/
 
+lib/python3/site-packages/doepy/__pycache__
+
 test/*.out
 test/*.png
+
+!test/lhs.png

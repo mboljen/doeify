@@ -1,7 +1,7 @@
 NAME=doeify
-VERSION=0.0.1
+VERSION=0.0.2
 
-DIRS=bin etc share
+DIRS=bin etc lib share
 INSTALL_DIRS=`find $(DIRS) -type d 2>/dev/null`
 INSTALL_FILES=`find $(DIRS) -type f 2>/dev/null`
 DOC_FILES=$(wildcard *.md *.txt)

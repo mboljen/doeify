@@ -1,50 +1,36 @@
-DOEIFY  := ../bin/doeify
+DOEIFY ?= ../bin/doeify
 
 SAMPLES ?= 12
 
-INFILE  ?= test.dat
+INFILE ?= test.dat
 
 METHODS = full_fact frac_fact plackett_burman sukharev box_behnken central_composite lhs space_filling_lhs random_k_means maximin halton uniform_random
 
-default: $(METHODS)
+RESULTSFILES = $(addsuffix .out, $(METHODS))
 
-full_fact:
-	$(DOEIFY) --infile=$(INFILE) --outfile=$(addsuffix .out, $@) --method=$@ --plot=$(addsuffix .png, $@)
+all: $(METHODS)
 
-frac_fact:
-	$(DOEIFY) --infile=$(INFILE) --outfile=$(addsuffix .out, $@) --method=$@ --plot=$(addsuffix .png, $@)
+$(METHODS): %: %.out
 
-plackett_burman:
-	$(DOEIFY) --infile=$(INFILE) --outfile=$(addsuffix .out, $@) --method=$@ --plot=$(addsuffix .png, $@)
+full_fact.out frac_fact.out plackett_burman.out: $(INFILE)
+	$(DOEIFY) --infile=$< --outfile=$@ --method=$(basename $@) --plot=$(patsubst %.out,%.png,$@)
 
-sukharev:
-	$(DOEIFY) --infile=$(INFILE) --outfile=$(addsuffix .out, $@) --method=$@ --plot=$(addsuffix .png, $@) --samples=27
+space_filling_lhs.out random_k_means.out maximin.out halton.out uniform_random.out: $(INFILE)
+	$(DOEIFY) --infile=$< --outfile=$@ --method=$(basename $@) --plot=$(patsubst %.out,%.png,$@) --samples=$(SAMPLES)
 
-box_behnken:
-	$(DOEIFY) --infile=$(INFILE) --outfile=$(addsuffix .out, $@) --method=$@ --plot=$(addsuffix .png, $@) --center=1
+lhs.out: $(INFILE)
+	$(DOEIFY) --infile=$< --outfile=$@ --method=$(basename $@) --plot=$(patsubst %.out,%.png,$@) --samples=$(SAMPLES) --dist=Normal
 
-central_composite:
-	$(DOEIFY) --infile=$(INFILE) --outfile=$(addsuffix .out, $@) --method=$@ --plot=$(addsuffix .png, $@) --center='(2,2)' --alpha=o --face=ccc
+sukharev.out: $(INFILE)
+	$(DOEIFY) --infile=$< --outfile=$@ --method=$(basename $@) --plot=$(patsubst %.out,%.png,$@) --samples=27
 
-lhs:
-	$(DOEIFY) --infile=$(INFILE) --outfile=$(addsuffix .out, $@) --method=$@ --plot=$(addsuffix .png, $@) --samples=$(SAMPLES) --dist=Normal
+box_behnken.out: $(INFILE)
+	$(DOEIFY) --infile=$< --outfile=$@ --method=$(basename $@) --plot=$(patsubst %.out,%.png,$@) --center=1
 
-space_filling_lhs:
-	$(DOEIFY) --infile=$(INFILE) --outfile=$(addsuffix .out, $@) --method=$@ --plot=$(addsuffix .png, $@) --samples=$(SAMPLES)
-
-random_k_means:
-	$(DOEIFY) --infile=$(INFILE) --outfile=$(addsuffix .out, $@) --method=$@ --plot=$(addsuffix .png, $@) --samples=$(SAMPLES)
-
-maximin:
-	$(DOEIFY) --infile=$(INFILE) --outfile=$(addsuffix .out, $@) --method=$@ --plot=$(addsuffix .png, $@) --samples=$(SAMPLES)
-
-halton:
-	$(DOEIFY) --infile=$(INFILE) --outfile=$(addsuffix .out, $@) --method=$@ --plot=$(addsuffix .png, $@) --samples=$(SAMPLES)
-
-uniform_random:
-	$(DOEIFY) --infile=$(INFILE) --outfile=$(addsuffix .out, $@) --method=$@ --plot=$(addsuffix .png, $@) --samples=$(SAMPLES)
+central_composite.out: $(INFILE)
+	$(DOEIFY) --infile=$< --outfile=$@ --method=$(basename $@) --plot=$(patsubst %.out,%.png,$@) --center='(2,2)' --alpha=o --face=ccc
 
 clean:
-	$(RM) $(addsuffix .png, $(METHODS)) $(addsuffix .out, $(METHODS))
+	$(RM) $(RESULTSFILES) $(patsubst %.out,%.png,$(RESULTSFILES))
 
-.PHONY: default clean
+.PHONY: all $(METHODS) clean
