@@ -1,0 +1,313 @@
+#!/usr/bin/env python3
+#
+# Created:   Thu 2024-05-02 14:11:47 CEST (boljen)
+# Modified:  Thu 2024-05-16 07:09:52 CEST (boljen)
+#
+# doeify:
+#   Create Design of Experiment samples
+#
+# See also:
+#   https://doepy.readthedocs.io/
+
+import argparse
+import warnings
+import os
+import sys
+
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+
+from doepy import build
+from mpl_toolkits.mplot3d import Axes3D
+
+
+# =============================
+#    Main execution function
+# =============================
+
+def execute_main():
+
+    # Available DoE methods
+    method = { 'full_fact':         "Full factorial design",
+               'frac_fact':         "2-level fractional design",
+               'plackett_burman':   "Plackett-Burman design",
+               'sukharev':          "Sukharev grid",
+               'box_behnken':       "Box-Behnken",
+               'central_composite': "Central composite design",
+               'lhs':               "Latin hypercube (simple)",
+               'space_filling_lhs': "Latin hypercube (space-filling)",
+               'random_k_means':    "Random k-means cluster",
+               'maximin':           "Maximin reconstruction",
+               'halton':            "Halton sequence based",
+               'uniform_random':    "Uniform random matrix" }
+
+    # Central composite design types
+    faces = [ 'circumscribed', 'ccc', 'inscribed', 'cci', 'faced', 'ccf' ]
+
+    # Available alpha effects
+    alphas = [ 'orthogonal', 'o', 'rotatable', 'r' ]
+
+    # Analytical probability distribution to be applied over the randomized sampling (lhs)
+    dists = [ 'Normal', 'Poisson', 'Exponential', 'Beta', 'Gamma' ]
+
+    # Declare parser object
+    parser = argparse.ArgumentParser( \
+            prog='doeify', \
+            description='Create Design of Experiment combinations from given parameter sets')
+
+    # Add options
+    parser.add_argument('-i', '--infile', help="Input filename", type=str)
+    parser.add_argument('-o', '--outfile', help="Output filename to which DoE will be saved", type=str, default=sys.stdout.buffer)
+    parser.add_argument('-m', '--method', help="Design of Experiment method", type=str, default='lhs', choices=method.keys())
+    parser.add_argument('-p', '--plot', help="Plot filename", nargs='?', const='***', type=str, default=None)
+
+    # Add option (all designs except full factorial, fractional factorial, Plackett-Burman, Box-Behnken, central composite)
+    parser.add_argument('-s', '--samples', help='Number of sampling points', type=int, default=None)
+
+    # Add option (2-level fractional design only)
+    parser.add_argument('--res', help='Desired resolution for fractional factorial design', type=int, default=None)
+
+    # Add option (Latin hypercube simple design only)
+    parser.add_argument('--dist', help='Analytical probability distribution', type=str, default=None, choices=dists)
+
+    # Add option (Box-Behnken and central composite design only)
+    parser.add_argument('--center', help='Number of center points', type=str, default=None)
+    parser.add_argument('--alpha', help='Alpha effect on variance', type=str, default=None, choices=alphas)
+    parser.add_argument('--face', help='Central composite design type', type=str, default=None, choices=faces)
+
+    # Process arguments
+    args = parser.parse_args()
+
+    # Check if resolution is defined
+    if args.res!=None:
+        if args.method!='frac_fact':
+            warnings.warn('Desired resolution {:d} is not required by method {:s}'.format(args.res,args.method))
+
+    # Check if analytical probability distribution is defined
+    if args.dist!=None:
+        if args.method!='lhs':
+            warnings.warn('Analytical probability distribution {:s} is not required by method {:s}'.format(args.dist,args.method))
+
+    # Check if number of samples is defined
+    if args.samples!=None:
+        if args.method=='full_fact'       or \
+           args.method=='frac_fact'       or \
+           args.method=='plackett_burman' or \
+           args.method=='box_behnken'     or \
+           args.method=='central_composite':
+            warnings.warn('Number of samples {:d} is ignored for method {:s}'.format(args.samples,args.method))
+
+    # Center defaults
+    center_bb =  1
+    center_cc = (2,2)
+
+    # Check if center option has been given
+    if args.center!=None:
+        # Check Doe method
+        if args.method=='box_behnken':
+            # Convert string input to single integer
+            center_bb = int(args.center)
+        elif args.method=='central_composite':
+            # Convert string input to 1x2 array of integers
+            tmp = args.center.replace('(', '').replace(')', '')
+            center_cc = tuple(map(int,tmp.split(',')))
+            if len(center_cc)!=2:
+                raise ValueError('Invalid number of values for "center" (expected 2, but got {:d}).'.format(len(center_cc)))
+        else:
+            warnings.warn('Center {:s} is not required by method {:s}'.format(args.center,args.method))
+
+    # Alpha and face defaults
+    center_alpha = 'o'
+    center_face  = 'ccc'
+
+    # Check if face is defined
+    if args.face!=None:
+        if args.method=='central_composite':
+            center_face = args.face
+        else:
+            warnings.warn('Face {:s} is not required by method {:s}'.format(args.face,args.method))
+
+    # Check if alpha is defined
+    if args.alpha!=None:
+        if args.method=='central_composite':
+            center_alpha = args.alpha
+        else:
+            warnings.warn('Alpha {:s} is not required by method {:s}'.format(args.alpha,args.method))
+
+    # Read input file
+    df_in = pd.read_fwf(args.infile)
+    data_in = df_in.to_dict('list')
+
+    # Check input data
+    for key, values in data_in.items():
+
+        # Remove NANs
+        values = [ x for x in values if str(x) != 'nan' ]
+
+        # Check method
+        if args.method=='frac_fact'         or \
+           args.method=='plackett_burman'   or \
+           args.method=='sukharev'          or \
+           args.method=='central_composite' or \
+           args.method=='lhs'               or \
+           args.method=='space_filling_lhs' or \
+           args.method=='random_k_means'    or \
+           args.method=='maximin'           or \
+           args.method=='halton'            or \
+           args.method=='uniform_random':
+
+            # Restrict to minimum and maximum value only
+            data_in[key] = [ min(values), max(values) ]
+
+        else:
+
+            # Sort list numerically in ascending order
+            data_in[key] = sorted(values)
+
+    # Build DoE
+    if args.method=='full_fact':
+        df = build.full_fact(d=data_in)
+
+    elif args.method=='frac_fact':
+        # Only min and max values of the range are required
+        df = build.frac_fact_res(d=data_in, res=args.res)
+
+    elif args.method=='plackett_burman':
+        # Only min and max values of the range are required
+        df = build.plackett_burman(d=data_in)
+
+    elif args.method=='sukharev':
+        # Only min and max values of the range are required
+        df = build.sukharev(d=data_in, num_samples=args.samples)
+
+    elif args.method=='box_behnken':
+        # 3 levels of factors are necessary
+        df = build.box_behnken(d=data_in, center=center_bb)
+
+    elif args.method=='central_composite':
+        # Only min and max values of the range are required
+        df = build.central_composite(d=data_in, center=center_cc, alpha=center_alpha, face=center_face)
+
+    elif args.method=='lhs':
+        # Only min and max values of the range are required
+        df = build.lhs(d=data_in, num_samples=args.samples, prob_distribution=args.dist)
+
+    elif args.method=='space_filling_lhs':
+        # Only min and max values of the range are required
+        df = build.space_filling_lhs(d=data_in, num_samples=args.samples)
+
+    elif args.method=='random_k_means':
+        # Only min and max values of the range are required
+        df = build.random_k_means(d=data_in, num_samples=args.samples)
+
+    elif args.method=='maximin':
+        # Only min and max values of the range are required
+        df = build.maximin(d=data_in, num_samples=args.samples)
+
+    elif args.method=='halton':
+        # Only min and max values of the range are required
+        df = build.halton(d=data_in, num_samples=args.samples)
+
+    elif args.method=='uniform_random':
+        # Only min and max values of the range are required
+        df = build.uniform_random(d=data_in, num_samples=args.samples)
+
+    # Initialize format variables
+    formats  = ''
+    headline = ''
+    colsep   = ' '
+    colwid   = 0
+
+    # Loop over columns and detect minimum required column width
+    for (col,colname) in enumerate(df):
+        colwid = max(12, len(colname))
+        for (row, rowvalue) in enumerate(df[colname].values):
+            colwid = max(colwid, len('{:1g}'.format(rowvalue)))
+        headline += '{:>{width}s}'.format(colname, width=colwid)
+        formats += '%{:d}g'.format(colwid)
+
+    # Write to STDOUT or output file
+    np.savetxt(args.outfile, df.values, fmt=formats, header=headline, comments='')
+
+
+    # =================
+    #    Create plot
+    # =================
+
+    # Check plot option is set
+    if args.plot is not None:
+
+        # Check number of columns
+        if len(df.columns)<2 or len(df.columns)>4:
+
+            # Issue warning for unappropriate dimension
+            warnings.warn('Cannot create plot with {dim} dimensions'.format(dim=len(df.columns)))
+
+        else:
+
+            # Check dimension
+            if len(df.columns)==2:
+
+                # Create 2D plot
+                fig, ax = plt.subplots()
+                x = df.iloc[:,0].to_list()
+                y = df.iloc[:,1].to_list()
+                ax.scatter(x,y)
+                ax.grid(which='major', color='#DDDDDD', linewidth=0.7)
+                ax.grid(which='minor', color='#EEEEEE', linestyle=':', linewidth=0.5)
+                ax.minorticks_on()
+                ax.set_xlabel(df.columns[0], fontsize=10, labelpad=10)
+                ax.set_ylabel(df.columns[1], fontsize=10, labelpad=10)
+
+            elif len(df.columns)==3:
+
+                # Create 3D plot
+                fig = plt.figure()
+                ax = fig.add_subplot(projection='3d')
+                x = df.iloc[:,0].to_list()
+                y = df.iloc[:,1].to_list()
+                z = df.iloc[:,2].to_list()
+                ax.scatter(x,y,z, c='blue')
+                ax.set_xlabel(df.columns[0], fontsize=10, labelpad=10)
+                ax.set_ylabel(df.columns[1], fontsize=10, labelpad=10)
+                ax.set_zlabel(df.columns[2], fontsize=10, labelpad=10)
+
+            elif len(df.columns)==4:
+
+                # Create 4D plot
+                fig = plt.figure()
+                ax = fig.add_subplot(projection='3d')
+                x = df.iloc[:,0].to_list()
+                y = df.iloc[:,1].to_list()
+                z = df.iloc[:,2].to_list()
+                c = df.iloc[:,3].to_list()
+                img=ax.scatter(x,y,z, c=c, cmap=plt.hot())
+                ax.set_xlabel(df.columns[0], fontsize=10, labelpad=10)
+                ax.set_ylabel(df.columns[1], fontsize=10, labelpad=10)
+                ax.set_zlabel(df.columns[2], fontsize=10, labelpad=10)
+                cbar = fig.colorbar(img, shrink=0.5, aspect=15, location='left')
+                cbar.ax.get_yaxis().labelpad = 15
+                cbar.ax.set_ylabel(df.columns[3], rotation = 270);
+
+            # Set plot title
+            ax.set_title(method[args.method])
+
+            # Check option value
+            if args.plot=='***':
+
+                # Raise widget
+                plt.show()
+
+            elif args.plot!=None:
+
+                # Save to specific value
+                fig.savefig(args.plot)
+
+
+# ========================================================
+#    Main UX with simple information about the software
+# ========================================================
+
+# Execute the main function
+execute_main()

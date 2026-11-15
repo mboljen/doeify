@@ -1,0 +1,5 @@
+pkg/
+share/
+
+test/*.out
+test/*.png
